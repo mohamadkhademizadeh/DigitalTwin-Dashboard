@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Digital Twin Dashboard</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; display: flex; height: 100vh; }
+    #ui { width: 300px; padding: 12px; background: #111; color: #eee; }
+    #scene { flex: 1; }
+    h2 { margin-top: 0; }
+    label { display:block; margin: 8px 0 4px; }
+    input { width: 100%; padding: 6px; }
+    .val { font-family: monospace; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <div id="ui">
+    <h2>Digital Twin</h2>
+    <label>WebSocket URL</label>
+    <input id="wsurl" value="ws://localhost:8001/ws"/>
+    <button id="connect">Connect</button>
+    <p>Pose: <span class="val" id="pose">(0,0,0)</span></p>
+    <p>Twist: <span class="val" id="twist">(0,0)</span></p>
+  </div>
+  <div id="scene"></div>
+
+<script>
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+const container = document.getElementById('scene');
+renderer.setSize(container.clientWidth, window.innerHeight);
+container.appendChild(renderer.domElement);
+
+// floor
+const grid = new THREE.GridHelper(20, 20);
+scene.add(grid);
+const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+scene.add(light);
+
+// robot
+const robot = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.2,0.3), new THREE.MeshStandardMaterial({color: 0x00aaff}));
+robot.position.set(0,0.15,0);
+scene.add(robot);
+
+// camera
+camera.position.set(2, 3, 4);
+camera.lookAt(0,0,0);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(container.clientWidth, window.innerHeight);
+  camera.aspect = container.clientWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+animate();
+
+let sock = null;
+document.getElementById('connect').onclick = () => {
+  const url = document.getElementById('wsurl').value;
+  if (sock) sock.close();
+  sock = new WebSocket(url);
+  sock.onopen = () => console.log('WS connected');
+  sock.onmessage = (ev) => {
+    const s = JSON.parse(ev.data);
+    document.getElementById('pose').textContent = `(${s.pose.x.toFixed(2)}, ${s.pose.y.toFixed(2)}, ${s.pose.theta.toFixed(2)})`;
+    document.getElementById('twist').textContent = `(${s.twist.lx.toFixed(2)}, ${s.twist.az.toFixed(2)})`;
+    // map ROS X->three X, ROS Y->three Z
+    robot.position.x = s.pose.x;
+    robot.position.z = s.pose.y;
+    robot.rotation.y = -s.pose.theta;
+  };
+  sock.onclose = () => console.log('WS closed');
+};
+</script>
+</body>
+</html>
